@@ -5,7 +5,8 @@ import threading
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 import json
 import os
-
+import re
+#           dlg.locator('button:has-text("取消")').click()  這個要改確定
 # ===== URLs =====
 URL_ADMIN = "https://wpadmin.ldjzmr.top"              # 總站（新增商戶用）
 URL_MERCHANT = "https://wpbrand.ldjzmr.top"      # 商戶後台（建角色用）
@@ -98,6 +99,24 @@ class MerchantTool(tk.Tk):
         self.var_loginacc  = tk.StringVar(value="")   # ✅ 商戶登入帳號
         self.var_loginpw   = tk.StringVar(value="")   # ✅ 商戶登入密碼
 
+        # --- 機台機器碼（01~N） ---
+        mc = ttk.LabelFrame(frm, text="機台機器碼（由上往下 01~N）", padding=10)
+        mc.pack(fill="x", pady=(10, 0))
+
+        self.var_machine_count = tk.IntVar(value=1)
+        ttk.Label(mc, text="機台數量").grid(row=0, column=0, sticky="w")
+        ttk.Spinbox(mc, from_=1, to=20, textvariable=self.var_machine_count, width=6).grid(row=0, column=1, sticky="w", padx=6)
+
+        self.btn_build_codes = ttk.Button(mc, text="生成 01~N 欄位", command=self.build_machine_code_rows)
+        self.btn_build_codes.grid(row=0, column=2, sticky="w", padx=6)
+
+        # 放動態欄位的容器
+        self.machine_codes_frame = ttk.Frame(mc)
+        self.machine_codes_frame.grid(row=1, column=0, columnspan=3, sticky="ew", pady=(8, 0))
+
+        self.machine_code_vars = []  # 存每一台的 StringVar
+        self.build_machine_code_rows()  # 啟動先生成一次
+
         row = 0
         ttk.Label(fields, text="商户名稱").grid(row=row, column=0, sticky="w")
         ttk.Entry(fields, textvariable=self.var_name, width=32).grid(row=row, column=1, sticky="w", padx=6, pady=3)
@@ -189,6 +208,31 @@ class MerchantTool(tk.Tk):
         self.save_ui_to_cache()
         threading.Thread(target=self.run_automation, daemon=True).start()
 
+    def build_machine_code_rows(self):
+        # 清空舊的
+        for w in self.machine_codes_frame.winfo_children():
+            w.destroy()
+        self.machine_code_vars.clear()
+
+        n = int(self.var_machine_count.get() or 1)
+        for i in range(1, n + 1):
+            v = tk.StringVar(value="")
+            self.machine_code_vars.append(v)
+
+            ttk.Label(self.machine_codes_frame, text=f"{i:02d}號台 機器碼").grid(row=i-1, column=0, sticky="w")
+            ttk.Entry(self.machine_codes_frame, textvariable=v, width=48).grid(row=i-1, column=1, sticky="w", padx=6, pady=2)
+    def strip_tail_digits(self, s: str) -> str:
+        return re.sub(r"\d+$", "", (s or "").strip())
+
+    def acc_with_seq(self, base: str, i: int) -> str:
+        return f"{base}{i:02d}"
+
+
+    def get_machine_codes(self):
+        # 回傳 list，index 0 對應 01號台
+        return [v.get().strip() for v in self.machine_code_vars]
+
+
     def run_automation(self):
         try:
             data = self.collect_ui_data()
@@ -264,6 +308,23 @@ class MerchantTool(tk.Tk):
         self.btn_open_merchant.config(state="disabled")
         self.save_ui_to_cache()
         threading.Thread(target=self.run_open_merchant_site, daemon=True).start()
+    def to_zh_num(self, n: int) -> str:
+        # 1~99：一、二、三... 十、十一、十二... 二十、二十一...
+        digits = ["零","一","二","三","四","五","六","七","八","九"]
+        if n <= 0 or n >= 100:
+            raise ValueError("目前只支援 1~99")
+
+        if n < 10:
+            return digits[n]
+        if n == 10:
+            return "十"
+        if n < 20:
+            return "十" + digits[n % 10]  # 11~19
+        tens = n // 10
+        ones = n % 10
+        if ones == 0:
+            return digits[tens] + "十"     # 20,30...
+        return digits[tens] + "十" + digits[ones]  # 21~99
 
     def run_open_merchant_site(self):
         try:
@@ -353,16 +414,57 @@ class MerchantTool(tk.Tk):
             self.write_log("➡️ 机器列表")
             page.click('span:has-text("机器列表")')
             page.wait_for_timeout(800)
+            
+            data = self.collect_ui_data()
+            merchant_name = data["name"].strip()
+            m_acc = data["loginacc"].strip()
+            m_pw  = data["loginpw"].strip()
 
-            self.write_log("➡️ 新增機器")
-            page.click('span:has-text("新增機器")')
-            page.wait_for_timeout(800)
+            codes = self.get_machine_codes()
+            n = len(codes)
+
+            base_acc = self.strip_tail_digits(m_acc)  # 去掉尾巴數字
+
+            for i in range(1, n + 1):
+                seq = f"{i:02d}"
+                machine_name = f"{merchant_name}{self.to_zh_num(i)}號台"
+                machine_no   = machine_name
+                machine_acc  = self.acc_with_seq(base_acc, i)
+                machine_pw   = m_pw
+                machine_code = codes[i-1]  # 你在 UI 填的第 i 行
+
+                self.write_log(f"🧾 第{seq}台：開啟新增機器並填表")
+                # 這裡假設你已經在機器列表頁，點「新增機器」開彈窗
+                page.click('span:has-text("新增機器")')
+                page.wait_for_timeout(800)
+
+                dlg2 = page.locator('.el-dialog:has-text("新增機器")').first
+
+                # 填必填
+                dlg2.locator('input[placeholder="請輸入機器名稱"]').first.fill(machine_name)
+                dlg2.locator('input[placeholder="請輸入機器编號"]').first.fill(machine_no)
+                dlg2.locator('input[placeholder="請輸入機器碼"]').first.fill(machine_code)
+                dlg2.locator('input[placeholder="請輸入機器登錄賬號"]').first.fill(machine_acc)
+                dlg2.locator('input[placeholder="請輸入機器登錄密碼"]').first.fill(machine_pw)
+
+                self.write_log(f"🟡 第{seq}台已填好：請你手動按『確認』(我不自動按)")
+                # 你手動按確認後，彈窗會關掉，程式才做下一台
+                page.wait_for_selector('.el-dialog:has-text("新增機器")', state="detached", timeout=600000)
 
         except Exception as e:
             self.write_log(f"❌ 發生錯誤：{e}")
             messagebox.showerror("錯誤", str(e))
         finally:
             self.btn_open_merchant.config(state="normal")
+        def dlg_fill_by_label(dlg, label_text: str, value: str):
+            # 找到含有該 label 的表單列
+            row = dlg.locator(
+                f'xpath=//div[contains(@class,"el-form-item")]'
+                f'[.//label[contains(normalize-space(.), "{label_text}")]]'
+            ).first
+            # 找該列裡的 input 填值
+            row.locator('input').first.fill(value)
+
 
 
 if __name__ == "__main__":
