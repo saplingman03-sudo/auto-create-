@@ -6,32 +6,40 @@ from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeo
 import json
 import os
 
-URL = "https://wpadmin.ldjzmr.top"
+# ===== URLs =====
+URL_ADMIN = "https://wpadmin.ldjzmr.top"              # 總站（新增商戶用）
+URL_MERCHANT = "https://wpbrand.ldjzmr.top"      # 商戶後台（建角色用）
 
-# ===== selectors =====
+# ===== selectors: admin login =====
 LOGIN_USERNAME_SEL = 'input[name="username"]'
 LOGIN_PASSWORD_SEL = 'input[name="password"]'
 LOGIN_BUTTON_SEL   = 'button:has-text("登錄")'
 LOGGED_IN_MARK_SEL = 'text=退出登录'
 
+# ===== selectors: admin merchant management =====
 MERCHANT_MENU_SEL    = 'li.el-menu-item:has-text("商戶管理")'
 ADD_MERCHANT_BTN_SEL = 'span:has-text("新增商户")'
 
-# 表單欄位（placeholder）(保留著，但我們主要用 label 來填)
-SEL_NAME      = 'input[placeholder="請輸入商户名稱"]'
-SEL_SHARE1    = 'input[placeholder="請輸入分成比例"]'
-SEL_SHARE2_X  = '(//input[@placeholder="請輸入分成比例"])[2]'
-SEL_MIN_WASH  = 'input[placeholder="請輸入最低洗分金額"]'
-SEL_PHONE     = 'input[placeholder="請輸入聯繫人電話"]'
-SEL_LOGIN_ACC = 'input[placeholder="请设置登錄账號"]'
-SEL_LOGIN_PW  = 'input[placeholder="请设置登錄密碼"]'
+# ===== 新增商戶表單（彈窗內 placeholder）=====
+PH_NAME      = "請輸入商户名稱"
+PH_SHARE     = "請輸入分成比例"
+PH_SINGLE    = "請輸入單次開分金額"
+PH_MINWASH   = "請輸入最低洗分金額"
+PH_PHONE     = "請輸入聯繫人電話"
+PH_LOGINACC  = "请设置登錄账號"
+PH_LOGINPW   = "请设置登錄密碼"
 
-# 先跳過
-SEL_REGION_IN = 'input[placeholder="请选择商户地域"]'
-SEL_BAC1_X    = '(//input[@placeholder="請選擇需要開啓的百家"])[1]'
-SEL_BAC2_X    = '(//input[@placeholder="請選擇需要開啓的百家"])[2]'
+# ===== 商戶後台：系統設置/角色/新增角色 =====
+SYS_MENU_TEXT = "系統設置"
+ROLE_TEXT     = "角色"
+ADD_ROLE_TEXT = "新增角色"
+ROLE_DIALOG_TEXT = "新增角色"
 
-# ===== JSON 緩存 =====
+# 權限樹：展開「財務帳單」，勾「上下分交班中心」
+FIN_NODE_TEXT  ="財務賬單"
+SHIFT_NODE_TEXT = "上下分交班中心"
+
+# ===== cache =====
 CACHE_FILE = "merchant_cache.json"
 
 
@@ -42,7 +50,6 @@ def load_cache() -> dict:
         with open(CACHE_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
     except Exception:
-        # 檔案壞掉/格式錯就當沒緩存
         return {}
 
 
@@ -58,19 +65,16 @@ class MerchantTool(tk.Tk):
         self.geometry("720x620")
 
         self._build_ui()
-
-        # 啟動時載入緩存
         self.load_cache_to_ui()
-
-        # 關閉視窗也存一次
         self.protocol("WM_DELETE_WINDOW", self.on_close)
 
+    # ===== UI =====
     def _build_ui(self):
         frm = ttk.Frame(self, padding=10)
         frm.pack(fill="both", expand=True)
 
-        # --- 帳密區 ---
-        cred = ttk.LabelFrame(frm, text="登入資訊", padding=10)
+        # --- 帳密區（總站） ---
+        cred = ttk.LabelFrame(frm, text="登入資訊（總站）", padding=10)
         cred.pack(fill="x")
 
         self.var_user = tk.StringVar(value="")
@@ -91,8 +95,8 @@ class MerchantTool(tk.Tk):
         self.var_single    = tk.StringVar(value="")
         self.var_minwash   = tk.StringVar(value="")
         self.var_phone     = tk.StringVar(value="")
-        self.var_loginacc  = tk.StringVar(value="")
-        self.var_loginpw   = tk.StringVar(value="")
+        self.var_loginacc  = tk.StringVar(value="")   # ✅ 商戶登入帳號
+        self.var_loginpw   = tk.StringVar(value="")   # ✅ 商戶登入密碼
 
         row = 0
         ttk.Label(fields, text="商户名稱").grid(row=row, column=0, sticky="w")
@@ -112,19 +116,22 @@ class MerchantTool(tk.Tk):
         ttk.Label(fields, text="聯繫人電話").grid(row=row, column=0, sticky="w")
         ttk.Entry(fields, textvariable=self.var_phone, width=32).grid(row=row, column=1, sticky="w", padx=6, pady=3)
 
-        ttk.Label(fields, text="登錄账號").grid(row=row, column=2, sticky="w", padx=(12, 0))
+        ttk.Label(fields, text="登錄账號（商戶）").grid(row=row, column=2, sticky="w", padx=(12, 0))
         ttk.Entry(fields, textvariable=self.var_loginacc, width=20).grid(row=row, column=3, sticky="w", padx=6, pady=3)
         row += 1
 
-        ttk.Label(fields, text="登錄密碼").grid(row=row, column=0, sticky="w")
+        ttk.Label(fields, text="登錄密碼（商戶）").grid(row=row, column=0, sticky="w")
         ttk.Entry(fields, textvariable=self.var_loginpw, show="*", width=32).grid(row=row, column=1, sticky="w", padx=6, pady=3)
 
         # --- 控制按鈕 ---
         ctrl = ttk.Frame(frm)
         ctrl.pack(fill="x", pady=(10, 0))
 
-        self.btn_start = ttk.Button(ctrl, text="開始（開網站→登入→商戶管理→新增→填表）", command=self.on_start)
+        self.btn_start = ttk.Button(ctrl, text="開始（總站：登入→商戶管理→新增→填表）", command=self.on_start)
         self.btn_start.pack(side="left")
+
+        self.btn_open_merchant = ttk.Button(ctrl, text="開商戶站（建立角色）", command=self.on_open_merchant_site)
+        self.btn_open_merchant.pack(side="left", padx=8)
 
         self.btn_clear = ttk.Button(ctrl, text="清空Log", command=lambda: self.log.delete("1.0", "end"))
         self.btn_clear.pack(side="left", padx=8)
@@ -139,7 +146,7 @@ class MerchantTool(tk.Tk):
         self.log.insert("end", msg + "\n")
         self.log.see("end")
 
-    # ===== 緩存：UI <-> JSON =====
+    # ===== cache: UI <-> JSON =====
     def collect_ui_data(self) -> dict:
         return {
             "username": self.var_user.get().strip(),
@@ -164,14 +171,10 @@ class MerchantTool(tk.Tk):
         self.var_phone.set(data.get("phone", ""))
         self.var_loginacc.set(data.get("loginacc", ""))
         self.var_loginpw.set(data.get("loginpw", ""))
-        if data:
-            self.write_log("📂 已載入 merchant_cache.json")
-        else:
-            self.write_log("📂 尚無緩存檔（第一次使用）")
+        self.write_log("📂 已載入 merchant_cache.json" if data else "📂 尚無緩存檔（第一次使用）")
 
     def save_ui_to_cache(self):
-        data = self.collect_ui_data()
-        save_cache(data)
+        save_cache(self.collect_ui_data())
         self.write_log("💾 已寫入 merchant_cache.json")
 
     def on_close(self):
@@ -180,20 +183,19 @@ class MerchantTool(tk.Tk):
         finally:
             self.destroy()
 
+    # ===== btn 1: admin flow =====
     def on_start(self):
         self.btn_start.config(state="disabled")
-
-        # 按開始先存一次（避免你填完還沒關就閃退）
         self.save_ui_to_cache()
-
-        t = threading.Thread(target=self.run_automation, daemon=True)
-        t.start()
+        threading.Thread(target=self.run_automation, daemon=True).start()
 
     def run_automation(self):
         try:
             data = self.collect_ui_data()
             user = data["username"]
             pw   = data["password"]
+            if not user or not pw:
+                raise RuntimeError("總站帳號/密碼未填")
 
             payload = {
                 "name": data["name"],
@@ -205,77 +207,150 @@ class MerchantTool(tk.Tk):
                 "loginpw": data["loginpw"],
             }
 
-            def fill_by_label(page, label_text: str, value: str):
-                row = page.locator(
-                    f'xpath=//div[contains(@class,"el-form-item")]'
-                    f'[.//label[contains(normalize-space(.), "{label_text}")]]'
-                ).first
-                inp = row.locator('input.el-input__inner').first
-                inp.fill(value)
+            self.write_log("🚀 啟動 Playwright（總站）")
+            play = sync_playwright().start()
+            browser = play.chromium.launch(headless=False)
+            page = browser.new_page()
 
-            self.write_log("🚀 開始啟動 Playwright")
-            with sync_playwright() as p:
-                browser = p.chromium.launch(headless=False)
-                page = browser.new_page()
+            self.write_log(f"🌐 開啟總站：{URL_ADMIN}")
+            page.goto(URL_ADMIN, wait_until="domcontentloaded")
+            page.wait_for_timeout(1500)
 
-                self.write_log(f"🌐 開啟網站：{URL}")
-                page.goto(URL, wait_until="domcontentloaded")
+            # login
+            if page.locator(LOGIN_USERNAME_SEL).count() > 0:
+                self.write_log("🔐 登入總站")
+                page.fill(LOGIN_USERNAME_SEL, user)
+                page.fill(LOGIN_PASSWORD_SEL, pw)
+                page.click(LOGIN_BUTTON_SEL)
+                page.wait_for_timeout(3000)
+                page.reload(wait_until="domcontentloaded")
                 page.wait_for_timeout(1500)
+            else:
+                self.write_log("✅ 可能已登入（總站）")
 
-                # --- 登入 ---
-                if page.locator(LOGIN_USERNAME_SEL).count() > 0:
-                    self.write_log("🔐 偵測到登入頁，填入帳密並登入")
-                    if not user or not pw:
-                        raise RuntimeError("目前在登入頁，但你的帳號或密碼是空的")
+            # merchant menu
+            self.write_log("➡️ 點：商戶管理")
+            page.click(MERCHANT_MENU_SEL)
+            page.wait_for_selector("div.el-table", timeout=10000)
 
-                    page.fill(LOGIN_USERNAME_SEL, user)
-                    page.fill(LOGIN_PASSWORD_SEL, pw)
-                    page.click(LOGIN_BUTTON_SEL)
+            # add merchant
+            self.write_log("➡️ 點：新增商户")
+            page.click(ADD_MERCHANT_BTN_SEL)
+            page.wait_for_selector('text=新增商户', timeout=10000)
 
-                    self.write_log("⏳ 等待跳轉後，強制刷新（模擬F5）")
-                    page.wait_for_timeout(3000)
-                    page.reload(wait_until="domcontentloaded")
-                    page.wait_for_timeout(2000)
-                else:
-                    self.write_log("✅ 看起來不是登入頁（可能已登入）")
+            dlg = page.locator('.el-dialog:has-text("新增商户")').first
 
-                # --- 進商戶管理 ---
-                self.write_log("➡️ 點：商戶管理")
-                page.click(MERCHANT_MENU_SEL)
-                page.wait_for_selector("div.el-table", timeout=10000)
+            def dlg_fill(ph: str, value: str):
+                dlg.locator(f'input[placeholder="{ph}"]').first.fill(value)
 
-                # --- 點新增商戶 ---
-                self.write_log("➡️ 點：+ 新增商户")
-                page.click(ADD_MERCHANT_BTN_SEL)
+            dlg_fill(PH_NAME, payload["name"])
+            dlg_fill(PH_SHARE, payload["share"])
+            dlg_fill(PH_SINGLE, payload["single"])
+            dlg_fill(PH_MINWASH, payload["minwash"])
+            dlg_fill(PH_PHONE, payload["phone"])
+            dlg_fill(PH_LOGINACC, payload["loginacc"])
+            dlg_fill(PH_LOGINPW, payload["loginpw"])
 
-                # 等彈窗出現
-                page.wait_for_selector('text=新增商户', timeout=10000)
-                self.write_log("✅ 已進入新增商戶表單")
-
-                # 先抓「新增商戶」彈窗（用標題定位）
-                dlg = page.locator('.el-dialog:has-text("新增商户")').first
-
-                def dlg_fill(placeholder: str, value: str):
-                    dlg.locator(f'input[placeholder="{placeholder}"]').first.fill(value)
-
-                dlg_fill("請輸入商户名稱", payload["name"])
-                dlg_fill("請輸入分成比例", payload["share"])
-                dlg_fill("請輸入單次開分金額", payload["single"])
-                dlg_fill("請輸入最低洗分金額", payload["minwash"])
-                dlg_fill("請輸入聯繫人電話", payload["phone"])
-                dlg_fill("请设置登錄账號", payload["loginacc"])
-                dlg_fill("请设置登錄密碼", payload["loginpw"])
-
-
-                self.write_log("🧾 已填入你在軟體輸入的欄位")
-                self.write_log("🟡 已跳過：商戶地域、百家（你說先不做）")
-                self.write_log("🟢 現在停在畫面上，給你手動檢查與按確定/送出")
+            self.write_log("🧾 已填入新增商戶欄位（停在畫面，給你手動按確定）")
 
         except Exception as e:
             self.write_log(f"❌ 發生錯誤：{e}")
             messagebox.showerror("錯誤", str(e))
         finally:
             self.btn_start.config(state="normal")
+
+    # ===== btn 2: merchant backend role flow =====
+    def on_open_merchant_site(self):
+        self.btn_open_merchant.config(state="disabled")
+        self.save_ui_to_cache()
+        threading.Thread(target=self.run_open_merchant_site, daemon=True).start()
+
+    def run_open_merchant_site(self):
+        try:
+            self.write_log("🚀 啟動 Playwright（商戶後台：建角色）")
+            play = sync_playwright().start()
+            browser = play.chromium.launch(headless=False)
+            page = browser.new_page()
+
+            self.write_log(f"🌐 開啟商戶後台：{URL_MERCHANT}")
+            page.goto(URL_MERCHANT, wait_until="domcontentloaded")
+            page.wait_for_timeout(1500)
+
+            # ===== 商戶後台登入 =====
+            data = self.collect_ui_data()
+            m_user = data["loginacc"]
+            m_pw   = data["loginpw"]
+
+            if not m_user or not m_pw:
+                raise RuntimeError("商戶登入帳號/密碼未填")
+
+            # selectors（商戶站常見寫法，多 selector 容錯）
+            M_LOGIN_USER_SEL = 'input[name="username"], input[name="account"], input[placeholder*="账号"], input[placeholder*="帳號"]'
+            M_LOGIN_PW_SEL   = 'input[name="password"], input[placeholder*="密码"], input[placeholder*="密碼"]'
+            M_LOGIN_BTN_SEL  = 'button:has-text("登錄"), button:has-text("登录"), button:has-text("登入")'
+            M_LOGGED_SEL     = 'text=退出, text=登出, text=退出登录, text=退出登錄'
+
+            if page.locator(M_LOGIN_USER_SEL).count() > 0:
+                self.write_log("🔐 偵測到商戶登入頁，填入商戶帳密")
+
+                page.locator(M_LOGIN_USER_SEL).first.fill(m_user)
+                page.locator(M_LOGIN_PW_SEL).first.fill(m_pw)
+                page.locator(M_LOGIN_BTN_SEL).first.click()
+
+                page.wait_for_timeout(2500)
+                page.reload(wait_until="domcontentloaded")
+                page.wait_for_timeout(1500)
+
+                if page.locator(M_LOGGED_SEL).count() > 0:
+                    self.write_log("✅ 商戶後台登入成功")
+                else:
+                    self.write_log("🟡 未偵測到登出標記，可能版面不同或還在載入")
+            else:
+                self.write_log("🟡 未偵測到商戶登入頁（可能已登入）")
+
+            self.write_log("➡️ 系統設置")
+            page.click(f'span:has-text("{SYS_MENU_TEXT}")')
+            page.wait_for_timeout(800)
+
+            self.write_log("➡️ 角色")
+            page.click(f'li.el-menu-item span:has-text("{ROLE_TEXT}")')
+            page.wait_for_timeout(1000)
+
+            self.write_log("➡️ 新增角色")
+            page.click(f'span:has-text("{ADD_ROLE_TEXT}")')
+            page.wait_for_timeout(1000)
+
+            dlg = page.locator(f'.el-dialog:has-text("{ROLE_DIALOG_TEXT}")').first
+
+            self.write_log("✏️ 輸入角色名稱：子商戶")
+            dlg.locator('input[placeholder="角色名稱"]').first.fill("子商戶")
+            page.wait_for_timeout(300)
+
+            self.write_log("▶ 展開：財務賬單")
+            dlg.locator(
+                '.el-tree-node__content:has(.el-tree-node__label:has-text("財務賬單")) .el-tree-node__expand-icon'
+            ).first.click()
+            page.wait_for_timeout(500)
+
+            # 等「上下分交班中心」真的出現
+            page.wait_for_selector(
+                '.el-dialog:has-text("新增角色") .el-tree-node__label:has-text("上下分交班中心")',
+                timeout=8000
+            )
+
+            self.write_log("☑ 勾選：上下分交班中心")
+            dlg.locator(
+                '.el-tree-node__content:has(.el-tree-node__label:has-text("上下分交班中心")) span.el-checkbox__inner'
+            ).first.click()
+            page.wait_for_timeout(500)
+            self.write_log("🟡 已完成（先不按確定，停在畫面）")
+            dlg.locator('button:has-text("取消")').click()
+
+        except Exception as e:
+            self.write_log(f"❌ 發生錯誤：{e}")
+            messagebox.showerror("錯誤", str(e))
+        finally:
+            self.btn_open_merchant.config(state="normal")
 
 
 if __name__ == "__main__":
