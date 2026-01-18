@@ -346,6 +346,18 @@ class MerchantTool(tk.Tk):
             self.write_log("🟡 已完成（先不按確定，停在畫面）")
             dlg.locator('button:has-text("取消")').click()
 
+            self.write_log("➡️ 機器管理")
+            page.click('span:has-text("機器管理")')
+            page.wait_for_timeout(800)
+
+            self.write_log("➡️ 机器列表")
+            page.click('span:has-text("机器列表")')
+            page.wait_for_timeout(800)
+
+            self.write_log("➡️ 新增機器")
+            page.click('span:has-text("新增機器")')
+            page.wait_for_timeout(800)
+
         except Exception as e:
             self.write_log(f"❌ 發生錯誤：{e}")
             messagebox.showerror("錯誤", str(e))
