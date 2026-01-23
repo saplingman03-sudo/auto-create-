@@ -444,8 +444,41 @@ class MerchantTool(tk.Tk):
                 dlg2.locator('input[placeholder="請輸入機器名稱"]').first.fill(machine_name)
                 dlg2.locator('input[placeholder="請輸入機器编號"]').first.fill(machine_no)
                 dlg2.locator('input[placeholder="請輸入機器碼"]').first.fill(machine_code)
-                dlg2.locator('input[placeholder="請輸入機器登錄賬號"]').first.fill(machine_acc)
-                dlg2.locator('input[placeholder="請輸入機器登錄密碼"]').first.fill(machine_pw)
+
+                # 1) 先點機器碼那格（用你原本的 selector 就好）
+                code_ipt = dlg2.locator('input[placeholder="請輸入機器碼"]').first
+                code_ipt.click()
+                code_ipt.press("Control+A")
+                code_ipt.type(str(machine_code), delay=30)
+
+                # 2) Tab 4 次（用 page.keyboard，不依賴 locator）
+                for _ in range(4):
+                    page.keyboard.press("Tab")
+                    page.wait_for_timeout(120)
+
+                # 3) 再用 placeholder 填帳密（先試這個，最省事）
+                def force_set_input(locator, value: str):
+                    locator.wait_for(state="visible", timeout=10000)
+                    locator.scroll_into_view_if_needed()
+                    locator.evaluate(
+                        """(el, v) => {
+                            el.focus();
+                            el.value = v;
+                            el.dispatchEvent(new Event('input', { bubbles: true }));
+                            el.dispatchEvent(new Event('change', { bubbles: true }));
+                            el.blur();
+                        }""",
+                        str(value),
+                    )
+
+                # 帳密
+                acc_ipt = dlg2.locator('input[placeholder="請輸入機器登錄賬號"]:visible').last
+                pw_ipt  = dlg2.locator('input[placeholder="請輸入機器登錄密碼"]:visible').last
+
+                force_set_input(acc_ipt, machine_acc)
+                force_set_input(pw_ipt, machine_pw)
+
+
 
                 self.write_log(f"🟡 第{seq}台已填好：請你手動按『確認』(我不自動按)")
                 # 你手動按確認後，彈窗會關掉，程式才做下一台
@@ -456,17 +489,18 @@ class MerchantTool(tk.Tk):
             messagebox.showerror("錯誤", str(e))
         finally:
             self.btn_open_merchant.config(state="normal")
-        def dlg_fill_by_label(dlg, label_text: str, value: str):
-            # 找到含有該 label 的表單列
-            row = dlg.locator(
-                f'xpath=//div[contains(@class,"el-form-item")]'
-                f'[.//label[contains(normalize-space(.), "{label_text}")]]'
-            ).first
-            # 找該列裡的 input 填值
-            row.locator('input').first.fill(value)
+    def dlg_fill_by_label(dlg, label_text: str, value: str):
+        # 找到含有該 label 的表單列
+        row = dlg.locator(
+            f'xpath=//div[contains(@class,"el-form-item")]'
+            f'[.//label[contains(normalize-space(.), "{label_text}")]]'
+        ).first
+        # 找該列裡的 input 填值
+        row.locator('input').first.fill(value)
 
 
 
 if __name__ == "__main__":
     app = MerchantTool()
+
     app.mainloop()
