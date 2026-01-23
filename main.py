@@ -405,7 +405,7 @@ class MerchantTool(tk.Tk):
             ).first.click()
             page.wait_for_timeout(500)
             self.write_log("🟡 已完成（先不按確定，停在畫面）")
-            dlg.locator('button:has-text("取消")').click()
+            dlg.locator('button:has-text("確定")').click()
 
             self.write_log("➡️ 機器管理")
             page.click('span:has-text("機器管理")')
@@ -481,8 +481,22 @@ class MerchantTool(tk.Tk):
 
 
                 self.write_log(f"🟡 第{seq}台已填好：請你手動按『確認』(我不自動按)")
-                # 你手動按確認後，彈窗會關掉，程式才做下一台
-                page.wait_for_selector('.el-dialog:has-text("新增機器")', state="detached", timeout=600000)
+            # 你手動按確認後，彈窗會關掉，程式才做下一台
+            def open_add_machine_dialog(page):
+                # 1) 先確保上一個 dialog 已經真的關掉（如果還在）
+                try:
+                    page.wait_for_selector('.el-dialog:has-text("新增機器")', state="detached", timeout=8000)
+                except:
+                    pass
+
+                # 2) 點「新增機器」（用 role/text 都行，這個比較穩）
+                btn = page.get_by_role("button", name="新增機器")
+                btn.wait_for(state="visible", timeout=10000)
+                btn.click()
+
+                # 3) 等新的 dialog 出現
+                page.wait_for_selector('.el-dialog:has-text("新增機器")', state="visible", timeout=10000)
+
 
         except Exception as e:
             self.write_log(f"❌ 發生錯誤：{e}")
